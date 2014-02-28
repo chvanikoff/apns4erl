@@ -137,7 +137,7 @@ handle_cast(Msg, State=#state{pushes_made = PushesMade}) when PushesMade >= 200 
     error_logger:info_msg("Renewing APNS connection...~n"),
     ssl:close(State#state.out_socket),
     case open_out(State#state.connection) of
-      {ok, Socket} -> handle_cast(Msg, State#state{out_socket=Socket});
+      {ok, Socket} -> handle_cast(Msg, State#state{out_socket=Socket, pushes_made = 0});
       {error, Reason} -> {stop, Reason}
     end
   catch
