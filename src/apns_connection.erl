@@ -19,6 +19,7 @@
 -record(state, {out_socket        :: tuple(),
                 in_socket         :: tuple(),
                 connection        :: #apns_connection{},
+                pushes_made = 0   :: integer(),
                 in_buffer = <<>>  :: binary(),
                 out_buffer = <<>> :: binary()}).
 -type state() :: #state{}.
@@ -56,7 +57,7 @@ init(Connection) ->
   try
     case open_out(Connection) of
       {ok, OutSocket} -> case open_feedback(Connection) of
-          {ok, InSocket} -> {ok, #state{out_socket=OutSocket, in_socket=InSocket, connection=Connection}};
+          {ok, InSocket} -> {ok, #state{out_socket=OutSocket, in_socket=InSocket, connection=Connection, pushes_made = 0}};
           {error, Reason} -> {stop, Reason}
         end;
       {error, Reason} -> {stop, Reason}
@@ -131,13 +132,26 @@ handle_cast(Msg, State=#state{out_socket=undefined,connection=Connection}) ->
     _:{error, Reason2} -> {stop, Reason2}
   end;
 
+handle_cast(Msg, State=#state{pushes_made = PushesMade}) when PushesMade >= 200 ->
+  try
+    error_logger:info_msg("Renewing APNS connection...~n"),
+    ssl:close(State#state.out_socket),
+    case open_out(State#state.connection) of
+      {ok, Socket} -> handle_cast(Msg, State#state{out_socket=Socket});
+      {error, Reason} -> {stop, Reason}
+    end
+  catch
+    _:{error, Reason2} -> {stop, Reason2}
+  end;
+
 handle_cast(Msg, State) when is_record(Msg, apns_msg) ->
   Socket = State#state.out_socket,
   Payload = build_payload(Msg),
   BinToken = hexstr_to_bin(Msg#apns_msg.device_token),
   case send_payload(Socket, Msg#apns_msg.id, Msg#apns_msg.expiry, BinToken, Payload) of
     ok ->
-      {noreply, State};
+      PushesMade = State#state.pushes_made + 1,
+      {noreply, State#state{pushes_made = PushesMade}};
     {error, Reason} ->
       {stop, {error, Reason}, State}
   end;
