@@ -7,6 +7,8 @@
 -module(apns_connection).
 -author('Fernando Benavides <fernando.benavides@inakanetworks.com>').
 
+-compile([{parse_transform, lager_transform}]).
+
 -behaviour(gen_server).
 
 -include("apns.hrl").
@@ -55,7 +57,7 @@ start_link(Connection) ->
 -spec init(#apns_connection{}) -> {ok, state()} | {stop, term()}.
 init(Connection) ->
   try
-    error_logger:info_msg("APNS init...~n"),
+    lager:info("APNS init...", []),
     case open_out(Connection) of
       {ok, OutSocket} -> case open_feedback(Connection) of
           {ok, InSocket} -> {ok, #state{out_socket=OutSocket, in_socket=InSocket, connection=Connection, pushes_made = 0}};
@@ -118,14 +120,14 @@ open_feedback(Connection) ->
 %% @hidden
 -spec handle_call(X, reference(), state()) -> {stop, {unknown_request, X}, {unknown_request, X}, state()}.
 handle_call(Request, _From, State) ->
-  error_logger:info_msg("(call) APNS stopping...~n"),
+  lager:info("APNS stopping due to unknown request...", []),
   {stop, {unknown_request, Request}, {unknown_request, Request}, State}.
 
 %% @hidden
 -spec handle_cast(stop | #apns_msg{}, state()) -> {noreply, state()} | {stop, normal | {error, term()}, state()}.
 handle_cast(Msg, State=#state{out_socket=undefined,connection=Connection}) ->
   try
-    error_logger:info_msg("Reconnecting to APNS...~n"),
+    lager:info("Reconnecting to APNS...", []),
     case open_out(Connection) of
       {ok, Socket} -> handle_cast(Msg, State#state{out_socket=Socket});
       {error, Reason} -> {stop, Reason}
@@ -136,7 +138,7 @@ handle_cast(Msg, State=#state{out_socket=undefined,connection=Connection}) ->
 
 handle_cast(Msg, State=#state{pushes_made = PushesMade}) when PushesMade >= 200 ->
   try
-    error_logger:info_msg("APNS Renewing APNS connection...~n"),
+    lager:info("APNS Renewing APNS connection...", []),
     ssl:close(State#state.out_socket),
     case open_out(State#state.connection) of
       {ok, Socket} -> handle_cast(Msg, State#state{out_socket=Socket, pushes_made = 0});
@@ -153,15 +155,15 @@ handle_cast(Msg, State) when is_record(Msg, apns_msg) ->
   case send_payload(Socket, Msg#apns_msg.id, Msg#apns_msg.expiry, BinToken, Payload) of
     ok ->
       PushesMade = State#state.pushes_made + 1,
-      error_logger:info_msg("APNS has made ~p pushes...~n", [PushesMade]),
+      lager:info("APNS has made ~p pushes...", [PushesMade]),
       {noreply, State#state{pushes_made = PushesMade}};
     {error, Reason} ->
-      error_logger:info_msg("APNS received error from ssl: ~p...~n", [Reason]),
+      lager:error("APNS received error from ssl: ~p...", [Reason]),
       {stop, {error, Reason}, State}
   end;
 
 handle_cast(stop, State) ->
-  error_logger:info_msg("(cast) APNS stopping...~n"),
+  lager:info("APNS stopping normally...", []),
   {stop, normal, State}.
 
 %% @hidden
@@ -180,8 +182,7 @@ handle_info({ssl, SslSocket, Data}, State = #state{out_socket = SslSocket,
             _ -> noop
           catch
             _:ErrorResult ->
-              error_logger:error_msg("APNS Error trying to inform error (~p) msg ~p:~n\t~p~n",
-                                     [Status, MsgId, ErrorResult])
+              lager:error("APNS Error trying to inform error (~p) msg ~p: ~p", [Status, MsgId, ErrorResult])
           end,
           case erlang:size(Rest) of
             0 -> {noreply, State#state{out_buffer = <<>>}}; %% It was a whole package
@@ -206,7 +207,7 @@ handle_info({ssl, SslSocket, Data}, State = #state{in_socket  = SslSocket,
       try Feedback({apns:timestamp(TimeT), bin_to_hexstr(Token)})
       catch
         _:Error ->
-          error_logger:error_msg("APNS Error trying to inform feedback token ~p:~n\t~p~n", [Token, Error])
+          lager:error("APNS Error trying to inform feedback token ~p: ~p", [Token, Error])
       end,
       case erlang:size(Rest) of
         0 -> {noreply, State#state{in_buffer = <<>>}}; %% It was a whole package
@@ -218,24 +219,23 @@ handle_info({ssl, SslSocket, Data}, State = #state{in_socket  = SslSocket,
 
 handle_info({ssl_closed, SslSocket}, State = #state{in_socket = SslSocket,
                                                     connection= Connection}) ->
-  error_logger:info_msg("APNS Feedback server disconnected. Waiting ~p millis to connect again...~n",
-                        [Connection#apns_connection.feedback_timeout]),
+  lager:warning("APNS Feedback server disconnected. Waiting ~p millis to connect again...", [Connection#apns_connection.feedback_timeout]),
   _Timer = erlang:send_after(Connection#apns_connection.feedback_timeout, self(), reconnect),
   {noreply, State#state{in_socket = undefined}};
 
 handle_info(reconnect, State = #state{connection = Connection}) ->
-  error_logger:info_msg("APNS Reconnecting the Feedback server...~n"),
+  lager:warning("APNS Reconnecting the Feedback server...", []),
   case open_feedback(Connection) of
     {ok, InSocket} -> {noreply, State#state{in_socket = InSocket}};
     {error, Reason} -> {stop, {in_closed, Reason}, State}
   end;
 
 handle_info({ssl_closed, SslSocket}, State = #state{out_socket = SslSocket}) ->
-  error_logger:info_msg("APNS disconnected~n"),
+  lager:error("APNS disconnected", []),
   {noreply, State#state{out_socket=undefined}};
 
 handle_info(Request, State) ->
-  error_logger:info_msg("APNS unknoqn request ~p ~n", [Request]),
+  lager:error("APNS unknown request ~p", [Request]),
   {stop, {unknown_request, Request}, State}.
 
 %% @hidden
@@ -308,8 +308,7 @@ send_payload(Socket, MsgId, Expiry, BinToken, Payload) ->
                 BinToken/binary,
                 PayloadLength:16/big,
                 BinPayload/binary>>],
-    error_logger:info_msg("Sending msg ~p (expires on ~p)~n",
-                         [MsgId, Expiry]),
+    lager:info("Sending msg ~p (expires on ~p)", [MsgId, Expiry]),
     ssl:send(Socket, Packet).
 
 hexstr_to_bin(S) ->
