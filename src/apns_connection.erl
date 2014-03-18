@@ -136,7 +136,7 @@ handle_cast(Msg, State=#state{out_socket=undefined,connection=Connection}) ->
     _:{error, Reason2} -> {stop, Reason2}
   end;
 
-handle_cast(Msg, State=#state{pushes_made = PushesMade}) when PushesMade >= 200 ->
+handle_cast(Msg, State=#state{pushes_made = PushesMade}) when PushesMade >= 10 ->
   try
     lager:info("APNS Renewing APNS connection...", []),
     ssl:close(State#state.out_socket),
