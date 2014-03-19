@@ -78,7 +78,6 @@ open_out(Connection) ->
   SslOpts = [
     {certfile, filename:absname(Connection#apns_connection.cert_file)},
     {reuse_sessions, false},
-    {log_alert, true},
     {mode, binary} | KeyFile
   ],
   RealSslOpts = case Connection#apns_connection.cert_password of
