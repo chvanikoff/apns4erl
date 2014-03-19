@@ -77,6 +77,8 @@ open_out(Connection) ->
   end,
   SslOpts = [
     {certfile, filename:absname(Connection#apns_connection.cert_file)},
+    {reuse_sessions, false},
+    {log_alert, true},
     {mode, binary} | KeyFile
   ],
   RealSslOpts = case Connection#apns_connection.cert_password of
@@ -136,7 +138,7 @@ handle_cast(Msg, State=#state{out_socket=undefined,connection=Connection}) ->
     _:{error, Reason2} -> {stop, Reason2}
   end;
 
-handle_cast(Msg, State=#state{pushes_made = PushesMade}) when PushesMade >= 10 ->
+handle_cast(Msg, State=#state{pushes_made = PushesMade, connection = Connection}) when PushesMade >= Connection#apns_connection.reconnect_after ->
   try
     lager:info("APNS Renewing APNS connection...", []),
     ssl:close(State#state.out_socket),

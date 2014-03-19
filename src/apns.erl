@@ -222,5 +222,6 @@ default_connection() ->
                                                   Other -> Other
                                                 end,
                               feedback_host   = get_env(feedback_host,    DefaultConn#apns_connection.feedback_host),
-                              feedback_port   = get_env(feedback_port,    DefaultConn#apns_connection.feedback_port)
+                              feedback_port   = get_env(feedback_port,    DefaultConn#apns_connection.feedback_port),
+                              reconnect_after = get_env(reconnect_after,  DefaultConn#apns_connection.reconnect_after)
                              }.
