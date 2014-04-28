@@ -256,9 +256,26 @@ build_payload(#apns_msg{alert = Alert,
                         apns_extra=Apns_Extra,
                         content_available = Content_Available,
                         extra = Extra}) ->
-    build_payload([{alert, Alert},
+    P = build_payload([{alert, Alert},
                    {badge, Badge},
-                   {sound, Sound}] ++ Apns_Extra, Extra, Content_Available).
+                   {sound, Sound}] ++ Apns_Extra, Extra, Content_Available),
+    if
+      byte_size(P) > 256 ->
+        Diff = byte_size(P) - 256,
+        if
+          Diff > byte_size(Alert) ->
+            lager:error("Payload size limit exceeded and can't be truncated (~p bytes, 256 allowed)", [byte_size(P)]),
+            %% Still send message but it will not be delivered
+            P;
+          true ->
+            Cut = byte_size(Alert) - Diff,
+            <<Alert2:Cut/binary, _/binary>> = Alert,
+            build_payload([{alert, Alert2},
+                   {badge, Badge},
+                   {sound, Sound}] ++ Apns_Extra, Extra, Content_Available)
+        end;
+      true -> P
+    end.
 
 build_payload(Params, Extra, Content_Available) ->
   apns_mochijson2:encode({[{<<"aps">>,
