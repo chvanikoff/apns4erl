@@ -259,12 +259,13 @@ build_payload(#apns_msg{alert = Alert,
     P = build_payload([{alert, Alert},
                    {badge, Badge},
                    {sound, Sound}] ++ Apns_Extra, Extra, Content_Available),
+    PBin = list_to_binary(P),
     if
-      byte_size(P) > 256 ->
-        Diff = byte_size(P) - 256,
+      byte_size(PBin) > 256 ->
+        Diff = byte_size(PBin) - 256,
         if
           Diff > byte_size(Alert) ->
-            lager:error("Payload size limit exceeded and can't be truncated (~p bytes, 256 allowed)", [byte_size(P)]),
+            lager:error("Payload size limit exceeded and can't be truncated (~p bytes, 256 allowed)", [byte_size(PBin)]),
             %% Still send message but it will not be delivered
             P;
           true ->
@@ -353,6 +354,6 @@ parse_status(3) -> missing_topic;
 parse_status(4) -> missing_payload;
 parse_status(5) -> missing_token_size;
 parse_status(6) -> missing_topic_size;
-parse_status(7) -> missing_payload_size;
+parse_status(7) -> invalid_payload_size;
 parse_status(8) -> invalid_token;
 parse_status(_) -> unknown.
