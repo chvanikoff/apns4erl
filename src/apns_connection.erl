@@ -260,18 +260,19 @@ build_payload(#apns_msg{alert = Alert,
                    {badge, Badge},
                    {sound, Sound}] ++ Apns_Extra, Extra, Content_Available),
     PBin = list_to_binary(P),
+    AlertBin = list_to_binary(Alert),
     if
       byte_size(PBin) > 256 ->
         Diff = byte_size(PBin) - 256,
         if
-          Diff > byte_size(Alert) ->
+          Diff > byte_size(AlertBin) ->
             lager:error("Payload size limit exceeded and can't be truncated (~p bytes, 256 allowed)", [byte_size(PBin)]),
             %% Still send message but it will not be delivered
             P;
           true ->
-            Cut = byte_size(Alert) - Diff,
-            <<Alert2:Cut/binary, _/binary>> = Alert,
-            build_payload([{alert, Alert2},
+            Cut = byte_size(AlertBin) - Diff,
+            <<Alert2:Cut/binary, _/binary>> = AlertBin,
+            build_payload([{alert, binary_to_list(Alert2)},
                    {badge, Badge},
                    {sound, Sound}] ++ Apns_Extra, Extra, Content_Available)
         end;
